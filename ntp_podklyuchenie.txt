@@ -1,0 +1,154 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <fstream>
+#include <sys/types.h>
+#include <sys/time.h>
+#include <sys/socket.h>
+#include <sys/select.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <netdb.h>
+#include <time.h>
+#include <string.h>
+#include <iostream>
+using namespace std;
+class NTP
+{
+private:
+	int socCon();
+	int portno=123;   
+	int maxlen=1024; 
+	string textWay,text;
+	void sendingData(int s);
+	long receeivingTime(int s);
+public:
+	NTP(string adr, string text):text(adr), textWay(text){};
+	void ntpdate();
+};
+int NTP::socCon()
+{
+	struct protoent *proto;    
+	int s;  
+	proto=getprotobyname("udp");
+	s=socket(PF_INET, SOCK_DGRAM, proto->p_proto);
+	if (s<0)
+	{
+		perror("socket");
+	}
+	return s;
+}
+void NTP::sendingData(int s)
+{
+	int i, num;
+	const char *hostname;
+	string adr;
+	struct sockaddr_in server_addr;
+	unsigned char msg[48]={010,0,0,0,0,0,0,0,0};
+	bool a=true;
+	timeval time_out ;
+    time_out.tv_sec = 0;
+    time_out.tv_usec = 5;
+	ifstream file(text);
+	if(!file)
+	{
+		perror("file");
+		throw 3;
+	}
+	file>>num;
+	for (int j=0;j<num;j++)
+	{
+		file>>adr;
+		cout<<adr<<endl;;
+		hostname=adr.data();
+		memset( &server_addr, 0, sizeof( server_addr ));
+		server_addr.sin_family=AF_INET;
+		server_addr.sin_addr.s_addr = inet_addr(hostname);
+		server_addr.sin_port=htons(portno);
+		i=connect(s,(struct sockaddr *)&server_addr,sizeof(server_addr));
+		a=true;
+		if (i == -1) 
+		{
+			a=false;
+			continue;
+		}
+		else break;
+	}
+	if(!a)
+		throw 1;
+	cout<<"sending data.."<<endl;
+	i=sendto(s,msg,sizeof(msg),0,(struct sockaddr *)&server_addr,sizeof(server_addr));
+}
+long NTP::receeivingTime(int s)
+{
+	int i;
+	unsigned long  buf[maxlen];
+	struct sockaddr saddr;
+	timeval time_out ;
+    time_out.tv_sec = 0;
+    time_out.tv_usec = 5;
+	socklen_t saddr_l = sizeof (saddr);
+	cout<<"receeving data.."<<endl;
+	i=recvfrom(s,buf,48,0,&saddr,&saddr_l);
+	if(i==SO_ERROR)
+	{
+		perror("recvfr");
+	}
+	long tmit;
+	tmit=ntohl((time_t)buf[4]);   
+	tmit-= 2208988800U; 
+	return tmit;	
+}
+void NTP::ntpdate() {
+	int s=socCon();
+	long i;
+	long tmit;
+	sendingData(s);
+	ofstream file(textWay);
+	if(!file)
+	{
+		perror("file");
+		throw 3;
+	}
+	tmit=receeivingTime(s);
+	file << "NTP time is " << ctime(&tmit)  << endl;
+	i=time(0);
+	file <<"System time is "<<ctime(&i);
+	file <<i-tmit<<" seconds off\n";
+}
+
+int main()
+ {
+	try
+	{	
+		string text, text1, adr, adr1;
+		int num;
+		cout<<"Input text way"<<endl;
+		cin>>text1;
+		cout<<"Input out text way"<<endl;
+		cin>>text;
+		NTP q(text1,text);
+		q.ntpdate();
+		return 0;
+	}
+	catch (int e)
+	{
+		switch (e)
+		{
+		case 1:
+		{
+			cout<<"Can't connect"<<endl;
+			break;
+		}		
+		case 2:
+		{
+			cout<<"Can't receeve"<<endl;
+			break;
+		}	
+		case 3:
+		{
+			cout<<"Can't open file"<<endl;
+			break;
+		}	
+		}
+	}
+}
